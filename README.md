@@ -15,15 +15,15 @@
 </p>
 
 <p align="center">
-  <a href="#cline"><img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/cline.svg" alt="" width="20" height="20"/> Cline</a> &nbsp;·&nbsp;
-  <a href="#roo-code"><img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/roocode.svg" alt="" width="20" height="20"/> Roo Code</a> &nbsp;·&nbsp;
-  <a href="#opencode"><img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/opencode.svg" alt="" width="20" height="20"/> OpenCode</a>
+  <a href="#cline"><img src="https://avatars.githubusercontent.com/cline?s=64" alt="" width="20" height="20"/> Cline</a> &nbsp;·&nbsp;
+  <a href="#roo-code"><img src="https://avatars.githubusercontent.com/RooCodeInc?s=64" alt="" width="20" height="20"/> Roo Code</a> &nbsp;·&nbsp;
+  <a href="#opencode"><img src="https://opencode.ai/favicon.svg" alt="" width="20" height="20"/> OpenCode</a>
 </p>
 
 <p align="center">
   Via protocol adapter:
-  <a href="#protocol-adapters"><img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/openai.svg" alt="" width="20" height="20"/> Codex CLI</a> &nbsp;·&nbsp;
-  <a href="#protocol-adapters"><img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/claude.svg" alt="" width="20" height="20"/> Claude Code</a>
+  <a href="#protocol-adapters"><img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1.104.0/icons/codex-color.svg" alt="" width="20" height="20"/> Codex CLI</a> &nbsp;·&nbsp;
+  <a href="#protocol-adapters"><img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1.104.0/icons/claudecode-color.svg" alt="" width="20" height="20"/> Claude Code</a>
 </p>
 
 Other clients can connect if they support OpenAI-compatible chat completions and a custom base URL.
