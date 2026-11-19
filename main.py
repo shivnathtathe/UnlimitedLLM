@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import re
+import shutil
 import sys
 
 import uvicorn
@@ -11,79 +11,74 @@ import uvicorn
 from app import Settings, create_app
 
 CYAN = "\033[96m"
+BOLD_WHITE = "\033[1;97m"
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
 DIM = "\033[2m"
 RESET = "\033[0m"
 
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-
-_LOGO_HEIGHT = 6
-
-_LOGO = {
-    "U": ["█   █", "█░  █░", "█░░ █░", "█░░ █░", "█░░██░", "░████░"],
-    "N": ["█   █", "██  █", "█░█ █", "█░░██", "█   █", "█   █"],
-    "L": ["█   ", "█░  ", "█░░ ", "█░░ ", "█░░ ", "█████"],
-    "I": ["█████", "░░█░░", "░░█░░", "░░█░░", "░░█░░", "█████"],
-    "M": ["█   █", "██ ██", "█░█░█", "█░░░█", "█   █", "█   █"],
-    "T": ["█████", "░░█░░", "░░█░░", "░░█░░", "░░█░░", "░░█░░"],
-    "E": ["█████", "█░░░░", "█░░░░", "█████", "█░░░░", "█████"],
-    "D": ["████░", "█░░█░", "█░░█░", "█░░█░", "█░░█░", "████░"],
-    " ": ["     "] * _LOGO_HEIGHT,
+_GLYPHS = {
+    'U': ('#..#', '#..#', '#..#', '#..#', '.##.'),
+    'N': ('#...#', '##..#', '#.#.#', '#..##', '#...#'),
+    'L': ('#...', '#...', '#...', '#...', '####'),
+    'I': ('###', '.#.', '.#.', '.#.', '###'),
+    'M': ('#...#', '##.##', '#.#.#', '#...#', '#...#'),
+    'T': ('#####', '..#..', '..#..', '..#..', '..#..'),
+    'E': ('####', '#...', '###.', '#...', '####'),
+    'D': ('###.', '#..#', '#..#', '#..#', '###.'),
 }
 
-BAR_CELLS = 20
-BAR_FULL = "█"
-BAR_EMPTY = "░"
 
+def _render_logo(columns: int) -> str:
+    name = "UnlimitedLLM"
+    subtitle = "LLM traffic proxy"
+    bitmap = ['..'.join(row) for row in zip(*(_GLYPHS[c] for c in name.upper()))]
+    width = len(bitmap[0]) + 1
+    if columns < width:
+        return f"{BOLD_WHITE}{name[:max(0, columns)]}{RESET}"
 
-def _render_logo(text: str) -> list[str]:
-    rows = [""] * _LOGO_HEIGHT
-    for ch in text.upper():
-        glyph = _LOGO.get(ch, ["     "] * _LOGO_HEIGHT)
-        for i in range(_LOGO_HEIGHT):
-            rows[i] += glyph[i] + " "
-    return [row.rstrip() for row in rows]
-
-
-def _visible_len(text: str) -> int:
-    return len(_ANSI_RE.sub("", text))
-
-
-def _render_bar(used_rpm: int, max_rpm: int) -> str:
-    filled = round(BAR_CELLS * used_rpm / max_rpm) if max_rpm else 0
-    filled = max(0, min(BAR_CELLS, filled))
-    bar = BAR_FULL * filled + BAR_EMPTY * (BAR_CELLS - filled)
-    return f"{YELLOW}▶▶ {RESET}[{GREEN}{bar}{RESET}] {GREEN}{used_rpm}/{max_rpm} RPM{RESET}"
+    rows = []
+    previous = '.' * width
+    for line in [*bitmap, '.' * (width - 1)]:
+        pixels = []
+        for face, shadow in zip(line + '.', '.' + previous):
+            if face == '#':
+                pixels.append(f'{CYAN}█')
+            elif shadow == '#':
+                pixels.append('\033[90m░')
+            else:
+                pixels.append(' ')
+        rows.append(''.join(pixels).rstrip() + RESET)
+        previous = line
+    rows.append(subtitle.rjust(width))
+    return '\n'.join(rows)
 
 
 def print_banner(settings: Settings) -> None:
-    logo = _render_logo("UnlimitedNIM")
-    width = max(len(r) for r in logo)
-
-    print(f"{CYAN}╔{'═' * (width + 2)}╗{RESET}")
-    for row in logo:
-        print(f"{CYAN}║ {row.ljust(width)} ║{RESET}")
-    print(f"{CYAN}║ {' ' * width} ║{RESET}")
-    bar = _render_bar(0, settings.max_rpm)
-    print(f"{CYAN}║ {bar}{' ' * (width - _visible_len(bar))} ║{RESET}")
-    print(f"{CYAN}╚{'═' * (width + 2)}╝{RESET}")
-    print(f"{YELLOW}  Make NVIDIA's 40 RPM free tier feel unlimited.{RESET}")
-    print(f"{DIM}  Built by Shivnath Tathe  |  github.com/shivnathtathe/UnlimitedNIM{RESET}")
-    print(f"{GREEN}  Listening on http://{settings.host}:{settings.port}/v1  |  43 tests passing  |  MIT License{RESET}")
+    print(_render_logo(shutil.get_terminal_size().columns))
+    print(f"{YELLOW}  Universal LLM rate-limit proxy. Works with any OpenAI-compatible API.{RESET}")
+    print(f"{DIM}  Built by Shivnath Tathe  |  github.com/shivnathtathe/UnlimitedLLM{RESET}")
+    print(f"{GREEN}  Listening on http://{settings.host}:{settings.port}/v1  |  72 tests passing  |  MIT License{RESET}")
     print()
 
 
 def main() -> None:
+    settings = Settings()
+    logging.disable(logging.CRITICAL if settings.dashboard_enabled else logging.NOTSET)
     logging.basicConfig(level=logging.INFO)
     try:
         sys.stdout.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):
         pass
-    settings = Settings()
     print_banner(settings)
     app = create_app(settings)
-    uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")
+    uvicorn.run(
+        app,
+        host=settings.host,
+        port=settings.port,
+        log_level="info",
+        access_log=not settings.dashboard_enabled,
+    )
 
 
 if __name__ == "__main__":
