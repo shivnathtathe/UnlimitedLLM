@@ -13,5 +13,5 @@
     <g id="word"><use href="#U"/><use href="#N" x="6"/><use href="#L" x="13"/><use href="#I" x="19"/><use href="#M" x="24"/><use href="#I" x="31"/><use href="#T" x="36"/><use href="#E" x="43"/><use href="#D" x="49"/><use href="#L" x="55"/><use href="#L" x="61"/><use href="#M" x="67"/></g>
   </defs>
   <g transform="translate(33 35) scale(9 12)"><use href="#word" x="0.5" y="0.5" fill="#475460"/><use href="#word" fill="#52d9ec"/></g>
-  <text x="684" y="132" text-anchor="end" font-family="monospace" font-size="18" fill="#c3cbd3">LLM traffic proxy</text>
+  <text x="360" y="132" text-anchor="middle" font-family="monospace" font-size="18" fill="#c3cbd3">LLM traffic proxy</text>
 </svg>

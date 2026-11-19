@@ -2,8 +2,6 @@
   <img src="assets/logo.svg" alt="UnlimitedLLM" width="600"/>
 </p>
 
-<h1 align="center">UnlimitedLLM</h1>
-
 <p align="center">
   Universal LLM rate-limit proxy. Works with any OpenAI-compatible API.
 </p>
@@ -29,11 +27,11 @@ back through `/v1/chat/completions`. Your provider's quota stays the same.
 Reported results from four separate provider runs. RPM is the proxy setting used
 for each experiment, not a universal limit for that provider.
 
-| Provider | RPM | Sent | HTTP successes | Client HTTP 429s | Mean response time |
+| Provider | RPM | Sent | HTTP successes | Client HTTP 429s | Avg total time |
 |---|---:|---:|---:|---:|---:|
 | NVIDIA NIM | 40 | 100 | 100 | 0 | 21,694 ms |
-| Groq | 30 | 100 | 100 | 0 | — |
-| Gemini | 15 | 100 | 100 | 0 | — |
+| Groq | 30 | 100 | 100 | 0 | 35,721 ms |
+| Gemini | 15 | 100 | 100 | 0 | 95,653 ms |
 | OpenRouter | 20 | 40 | 40 | 0 | 3,355 ms |
 | **Total** | | **340** | **340** | **0** | |
 
