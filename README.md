@@ -15,8 +15,18 @@
 </p>
 
 <p align="center">
-  <b>Works with Cline · Roo Code · OpenCode · Any OpenAI-compatible agent</b>
+  <a href="#cline"><img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/cline.svg" alt="" width="20" height="20"/> Cline</a> &nbsp;·&nbsp;
+  <a href="#roo-code"><img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/roocode.svg" alt="" width="20" height="20"/> Roo Code</a> &nbsp;·&nbsp;
+  <a href="#opencode"><img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/opencode.svg" alt="" width="20" height="20"/> OpenCode</a>
 </p>
+
+<p align="center">
+  Via protocol adapter:
+  <a href="#protocol-adapters"><img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/openai.svg" alt="" width="20" height="20"/> Codex CLI</a> &nbsp;·&nbsp;
+  <a href="#protocol-adapters"><img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/claude.svg" alt="" width="20" height="20"/> Claude Code</a>
+</p>
+
+Other clients can connect if they support OpenAI-compatible chat completions and a custom base URL.
 
 Coding agents send requests in bursts. UnlimitedLLM sits between your agent and one
 configured upstream, queues requests when the window fills, and streams responses
@@ -139,6 +149,15 @@ The legacy `NVIDIA_API_KEY`, `NVIDIA_BASE_URL`, `NVIDIA_DEFAULT_MODEL`, and
 the corresponding `UPSTREAM_*` variable takes precedence.
 
 ## Point Your Agent At It
+
+### Protocol adapters
+
+Codex CLI uses the OpenAI Responses API (`/v1/responses`); Claude Code uses the
+Anthropic Messages API (`/v1/messages`). UnlimitedLLM serves `/v1/chat/completions`.
+For either client, point the client at an adapter that translates its protocol,
+including streamed tool calls, and configure the adapter's Chat Completions
+upstream as `http://localhost:8000/v1`. These adapter paths have not been tested
+end to end in this project.
 
 ### OpenCode
 
