@@ -34,6 +34,8 @@ back through `/v1/chat/completions`. Your provider's quota stays the same.
 
 ## Provider load tests
 
+**Four providers. 340/340 HTTP 200 OK responses. Zero client-facing HTTP 429s.**
+
 Reported results from four separate provider runs. RPM is the proxy setting used
 for each experiment, not a universal limit for that provider.
 
@@ -47,8 +49,8 @@ for each experiment, not a universal limit for that provider.
 
 Gemini was the hardest run: the upstream returned both `429` and `503`, while the
 client recorded 100 HTTP successes. OpenRouter had the lowest reported average.
-These timings include time spent waiting behind other requests. The test counts
-HTTP responses; it does not check every SSE stream for an embedded error.
+Timings include time spent in the queue. Success is measured by HTTP status;
+stream completion was not measured.
 
 ## Request handling
 
