@@ -1,17 +1,17 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="UnlimitedNIM" width="600"/>
+  <img src="assets/logo.svg" alt="UnlimitedLLM" width="600"/>
 </p>
 
-<h3 align="center">UnlimitedNIM</h3>
+<h1 align="center">UnlimitedLLM</h1>
 
 <p align="center">
-  Make NVIDIA's 40 RPM free tier feel unlimited. Smart priority queue proxy for coding agents.
+  Universal LLM rate-limit proxy. Works with any OpenAI-compatible API.
 </p>
 
 <p align="center">
-  <a href="https://github.com/shivnathtathe/UnlimitedNIM/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"/></a>
-  <a href="https://github.com/shivnathtathe/UnlimitedNIM"><img src="https://img.shields.io/badge/tests-43%20passing-brightgreen.svg" alt="Tests"/></a>
-  <a href="https://github.com/shivnathtathe/UnlimitedNIM"><img src="https://img.shields.io/badge/NVIDIA%20NIM-40%20RPM-76b900.svg" alt="NVIDIA NIM"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"/></a>
+  <a href="#test-coverage"><img src="https://img.shields.io/badge/tests-72%20passing-brightgreen.svg" alt="72 tests passing"/></a>
+  <a href="#provider-load-tests"><img src="https://img.shields.io/badge/providers%20tested-4-blue.svg" alt="4 providers tested"/></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python"/>
   <img src="https://img.shields.io/badge/FastAPI-async-009688.svg" alt="FastAPI"/>
 </p>
@@ -20,25 +20,33 @@
   <b>Works with Cline · Roo Code · OpenCode · Any OpenAI-compatible agent</b>
 </p>
 
-## The Problem
+Coding agents send requests in bursts. UnlimitedLLM sits between your agent and one
+configured upstream, queues requests when the window fills, and streams responses
+back through `/v1/chat/completions`. Your provider's quota stays the same.
 
-NVIDIA's free NIM tier limits you to **40 requests per minute**. Coding agents like
-**Cline, Roo Code, and OpenCode** generate bursts of traffic — an agent loop firing
-tool calls, context reads, and model invocations in parallel will slam straight into
-that wall. The result: a flood of `429 Rate Limit Exceeded` errors, retried work,
-frustrated agents, and stalls in the middle of a task.
+## Provider load tests
 
-You don't get more throughput from NVIDIA — but you *can* stop wasting the window
-you have.
+Reported results from four separate provider runs. RPM is the proxy setting used
+for each experiment, not a universal limit for that provider.
 
-## What This Is
+| Provider | RPM | Sent | HTTP successes | Client HTTP 429s | Mean response time |
+|---|---:|---:|---:|---:|---:|
+| NVIDIA NIM | 40 | 100 | 100 | 0 | 21,694 ms |
+| Groq | 30 | 100 | 100 | 0 | — |
+| Gemini | 15 | 100 | 100 | 0 | — |
+| OpenRouter | 20 | 40 | 40 | 0 | 3,355 ms |
+| **Total** | | **340** | **340** | **0** | |
 
-UnlimitedNIM is a thin, streaming reverse proxy that sits between your coding agent
-and NVIDIA's API. It enforces NVIDIA's 40 RPM limit *for you* — in a way that's
-invisible to your agent:
+Gemini was the hardest run: the upstream returned both `429` and `503`, while the
+client recorded 100 HTTP successes. OpenRouter had the lowest reported average.
+These timings include time spent waiting behind other requests. The test counts
+HTTP responses; it does not check every SSE stream for an embedded error.
 
-- **Sliding-window rate limiter** — never fires more than 40 requests per minute,
-  so NVIDIA never sees a burst and never returns 429.
+## Request handling
+
+- **Rate limiting** — `MAX_RPM` controls how many new requests can start per window.
+- **Retries** — upstream `429` and `503` responses share a bounded exponential backoff.
+  Retry attempts do not acquire a new window slot.
 - **Priority queue** — when the window is full, requests wait in line instead of
   failing:
   - **priority 1** — user messages (you typed it, you're waiting)
@@ -48,20 +56,12 @@ invisible to your agent:
 - **Starvation protection** — a low-priority request stuck longer than the TTL is
   promoted so it eventually fires.
 - **Backpressure** — a bounded queue rejects with `503 + Retry-After` instead of
-  leaking memory or flooding NVIDIA.
-
-### The Screenshot-Worthy Stat
-
-> **260+ real NVIDIA requests driven through the proxy — zero leaked 429s, zero rejections.**
-
-Wave 1 (40 concurrent) fired instantly. Wave 2 (60 more, fired while wave 1 was still
-in flight) queued and streamed in across the next window — every single request
-completed, and not one rate-limit error reached a client.
+  growing without limit.
 
 ## How It Works
 
 ```
-Coding agent ──POST /v1/chat/completions──▶ UnlimitedNIM ──▶ NVIDIA API (40 RPM cap)
+Coding agent ──POST /v1/chat/completions──▶ UnlimitedLLM ──▶ Configured upstream
                       ▲                          │
                       └──── 200 + SSE stream ◄────┘
                         (or waits in priority queue)
@@ -71,18 +71,17 @@ Coding agent ──POST /v1/chat/completions──▶ UnlimitedNIM ──▶ NVI
 2. If the current 60s window has room, it fires immediately.
 3. Otherwise it enters the min-heap priority queue — highest priority (lowest
    number) leaves first; same priority is FIFO.
-4. As the window rolls over (or requests finish), the queue drains up to 40/min,
-   never exceeding the limit.
+4. When the window resets, waiting requests can claim the new slots. Finishing
+   a request does not refund its slot.
 5. Streaming responses relay byte-for-byte; client disconnects abort the upstream
-   call and free the slot (the window slot is never refunded — NVIDIA already
-   counted it, so we never re-fire).
+   call and release its in-flight resources.
 
 ## Quick Start
 
 ```bash
-# 1. Set your NVIDIA key
+# 1. Set your upstream key (NVIDIA NIM is the default upstream)
 #    (either export it or copy .env.example → .env and fill it in)
-export NVIDIA_API_KEY=your-key-here
+export UPSTREAM_API_KEY=your-key-here
 
 # 2. Install
 pip install -r requirements.txt
@@ -100,22 +99,31 @@ Verify it's alive:
 curl http://localhost:8000/status
 ```
 
+To try another provider, set `UPSTREAM_BASE_URL` to its OpenAI-compatible base
+URL, `UPSTREAM_DEFAULT_MODEL` and `UPSTREAM_MODELS` to model IDs it serves, and
+`MAX_RPM` to your account's limit. Restart the proxy after changing `.env`.
+
+Set `DASHBOARD_ENABLED=true` for an in-place display of window usage, in-flight
+requests, queue depth, total fired, and seconds until reset. For example, in a
+100-request burst at 40 RPM, the dashboard showed 40 fired / 60 queued, then
+80 / 20, then 100 / 0. “Fired” means dispatched, not completed.
+
 ## Configuration
 
 All options come from environment variables or a `.env` file (auto-loaded).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NVIDIA_API_KEY` | *(required)* | Your NVIDIA API key (used upstream) |
-| `NVIDIA_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Upstream NVIDIA base URL |
-| `NVIDIA_DEFAULT_MODEL` | `meta/llama-3.3-70b-instruct` | Model used when a client sends an unknown model |
-| `NVIDIA_MODELS` | *(built-in list)* | Comma-separated valid models passed through untouched |
+| `UPSTREAM_API_KEY` | *(required)* | API key used for upstream requests |
+| `UPSTREAM_BASE_URL` | `https://integrate.api.nvidia.com/v1` | OpenAI-compatible upstream API base URL |
+| `UPSTREAM_DEFAULT_MODEL` | `meta/llama-3.3-70b-instruct` | Model used when a client sends an unknown model |
+| `UPSTREAM_MODELS` | *(built-in list)* | Comma-separated valid models passed through untouched |
 | `REWRITE_UNKNOWN_MODELS` | `true` | `true` = rewrite unknown client models to default; `false` = pass through |
 | `MAX_RPM` | `40` | Max requests per minute (matches NVIDIA free tier) |
 | `WINDOW_SIZE` | `60` | Rate-limit window in seconds |
 | `MAX_QUEUE` | `500` | Max queue depth before rejecting with `503 + Retry-After` |
 | `RETRY_TTL` | `300` | Seconds before a queued low-priority request is promoted to priority 1 |
-| `HTTP_RETRIES` | `3` | Upstream `429` retries with exponential backoff |
+| `HTTP_RETRIES` | `3` | Upstream `429` and `503` retries with exponential backoff |
 | `BACKOFF_BASE` | `1.0` | Backoff base seconds (sleeps 1s, 2s, 4s) |
 | `CONNECT_TIMEOUT` | `30` | httpx connect timeout (s) |
 | `READ_TIMEOUT` | `60` | httpx read timeout (s) |
@@ -126,6 +134,11 @@ All options come from environment variables or a `.env` file (auto-loaded).
 | `LARGE_BODY_BYTES` | `262144` | Payload bytes above which a request defaults to priority 5 |
 | `HOST` | `0.0.0.0` | Bind address |
 | `PORT` | `8000` | Bind port |
+| `DASHBOARD_ENABLED` | `false` | Show a live terminal dashboard and silence console logs so redraws stay in place |
+
+The legacy `NVIDIA_API_KEY`, `NVIDIA_BASE_URL`, `NVIDIA_DEFAULT_MODEL`, and
+`NVIDIA_MODELS` variables remain supported as fallbacks. When both forms are set,
+the corresponding `UPSTREAM_*` variable takes precedence.
 
 ## Point Your Agent At It
 
@@ -137,9 +150,9 @@ Add to `opencode.json` (or `~/.config/opencode/opencode.json`):
 {
   "$schema": "https://opencode.ai/config.json",
   "provider": {
-    "nvidia": {
+    "unlimitedllm": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "UnlimitedNIM",
+      "name": "UnlimitedLLM",
       "options": {
         "baseURL": "http://localhost:8000/v1",
         "apiKey": "anything-works"
@@ -158,7 +171,7 @@ Add to `opencode.json` (or `~/.config/opencode/opencode.json`):
 
 1. Settings → API Provider → **OpenAI Compatible**
 2. Base URL: `http://localhost:8000/v1`
-3. API Key: anything (the proxy uses its own NVIDIA key)
+3. API Key: anything (the proxy uses its configured upstream key)
 4. Model: `nvidia/nemotron-3.5-lightning-30b-a3b`
 
 ### Roo Code
@@ -178,12 +191,12 @@ python load_test.py                       # full run (40 + 60 waves)
 python load_test.py --total 12 --wave1 5 --wave2 7   # quick smoke
 ```
 
-For safe local runs without touching NVIDIA, start the included mock upstream and
+For local runs without calling a provider, start the included mock upstream and
 point the proxy at it:
 
 ```bash
 python mock_upstream.py                    # terminal 1
-NVIDIA_BASE_URL=http://localhost:9001/v1 python main.py   # terminal 2
+UPSTREAM_BASE_URL=http://localhost:9001/v1 python main.py   # terminal 2
 ```
 
 ## Project Layout
@@ -192,20 +205,20 @@ NVIDIA_BASE_URL=http://localhost:9001/v1 python main.py   # terminal 2
 app/
   config.py        # env-driven settings
   rate_limiter.py  # sliding-window limiter + priority queue + in-flight tracking
-  proxy.py         # FastAPI app, streaming upstream, 429 retry, validation
+  proxy.py         # FastAPI app, streaming upstream, 429/503 retry, validation
 main.py            # entry point
 load_test.py       # agentic traffic simulator
 mock_upstream.py   # fake NVIDIA upstream for local testing
-tests/             # 43 tests covering all 34 test-case specs
+tests/             # 72 tests covering the full 34-case spec and regression scenarios
 ```
 
 ## Test Coverage
 
 The suite implements the full 34-case spec — window resets, previous-minute
 in-flight tracking, priority ordering, starvation promotion, clock skew, upstream
-429/500 handling, client disconnects, and the compliance layer (`/v1/models`,
+429/500/503 handling, client disconnects, and the compliance layer (`/v1/models`,
 `/status`).
 
 ```bash
-python -m pytest -q   # 43 passed
+python -m pytest -q   # 72 passed
 ```
