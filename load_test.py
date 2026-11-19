@@ -6,7 +6,7 @@ Simulates heavy agentic traffic against http://localhost:8000/v1:
   - Priority mix: 20% priority-1 short user messages,
     60% priority-3 agent tool calls (XML tags),
     20% priority-5 large fake stack traces
-  - Two waves: 40 fired immediately, 60 more while wave 1 is in flight
+  - Two overlapping waves: 40 fired immediately, then 60 more while wave 1 is in flight
     (stresses the previous-minute slot spawn logic: TC-002/005/008/010)
   - Tracks status counts, leaked 429s, avg response time, and queue wait
     time per request (time from send to first byte).
@@ -124,6 +124,27 @@ async def run_wave(
     return await asyncio.gather(*tasks)
 
 
+async def run_waves(
+    client: httpx.AsyncClient,
+    base_url: str,
+    api_key: str,
+    wave1_specs: list[RequestSpec],
+    wave2_specs: list[RequestSpec],
+) -> tuple[list[Result], list[Result]]:
+    wave1_task = asyncio.create_task(run_wave(client, base_url, api_key, wave1_specs))
+    await asyncio.sleep(0)
+    wave2_task = asyncio.create_task(run_wave(client, base_url, api_key, wave2_specs))
+    return await asyncio.gather(wave1_task, wave2_task)
+
+
+def partition_waves(
+    specs: list[RequestSpec], wave1: int, wave2: int
+) -> tuple[list[RequestSpec], list[RequestSpec]]:
+    if wave1 < 0 or wave2 < 0 or wave1 + wave2 != len(specs):
+        raise ValueError("wave1 + wave2 must equal total and both must be non-negative")
+    return specs[:wave1], specs[wave1:]
+
+
 def print_summary(results: list[Result], wave_sizes: list[int]) -> None:
     by_priority: dict[int, list[Result]] = {}
     for r in results:
@@ -187,16 +208,18 @@ async def main() -> None:
     args = parser.parse_args()
 
     specs = build_payloads(args.total, args.large_body_chars, args.model)
-    wave1_specs = specs[: args.wave1]
-    wave2_specs = specs[args.wave1 :]
+    try:
+        wave1_specs, wave2_specs = partition_waves(specs, args.wave1, args.wave2)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     timeout = httpx.Timeout(args.timeout, connect=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         print(f"firing wave 1: {len(wave1_specs)} requests")
-        wave1_results = await run_wave(client, args.base_url, args.api_key, wave1_specs)
-        fired = sum(1 for r in wave1_results if r.status is not None)
-        print(f"wave 1 returned ({fired} responses) — firing wave 2: {len(wave2_specs)}")
-        wave2_results = await run_wave(client, args.base_url, args.api_key, wave2_specs)
+        print(f"firing wave 2 while wave 1 is active: {len(wave2_specs)} requests")
+        wave1_results, wave2_results = await run_waves(
+            client, args.base_url, args.api_key, wave1_specs, wave2_specs
+        )
 
     results = wave1_results + wave2_results
     print_summary(results, [len(wave1_specs), len(wave2_specs)])
