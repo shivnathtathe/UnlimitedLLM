@@ -1,4 +1,4 @@
-"""FastAPI proxy in front of the NVIDIA API with a rate-limiting layer."""
+"""FastAPI proxy in front of an OpenAI-compatible API with rate limiting."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import sys
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional, Tuple
 
@@ -19,6 +20,7 @@ from .rate_limiter import QueueFull, RateLimiter, Slot
 log = logging.getLogger("nvidia-proxy")
 
 DEFAULT_PRIORITY = 3
+DASHBOARD_LINES = 5
 
 
 def create_app(
@@ -37,14 +39,23 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         sweep_task = limiter.start(settings.max_stream_age)
+        dashboard_task = (
+            asyncio.create_task(_dashboard_loop(limiter))
+            if settings.dashboard_enabled
+            else None
+        )
         try:
             yield
         finally:
+            if dashboard_task is not None:
+                dashboard_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await dashboard_task
             sweep_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await sweep_task
 
-    app = FastAPI(title="NVIDIA Rate-Limited Proxy", lifespan=lifespan)
+    app = FastAPI(title="Rate-Limited LLM Proxy", lifespan=lifespan)
     app.state.settings = settings
     app.state.limiter = limiter
 
@@ -144,6 +155,40 @@ def create_app(
     return app
 
 
+def _render_dashboard(status: dict) -> str:
+    max_rpm = status["max_rpm"]
+    current_rpm = status["window_count"]
+    cells = 20
+    filled = round(cells * current_rpm / max_rpm) if max_rpm else 0
+    filled = max(0, min(cells, filled))
+    bar = "█" * filled + "░" * (cells - filled)
+    return "\n".join(
+        (
+            f"RPM            [{bar}] {current_rpm}/{max_rpm}",
+            f"IN-FLIGHT      {status['in_flight']}",
+            f"QUEUED         {status['queue_depth']}",
+            f"TOTAL FIRED    {status['total_fired']}",
+            f"WINDOW RESETS  {status['window_resets_in']:.1f}s",
+        )
+    )
+
+
+async def _dashboard_loop(limiter: RateLimiter) -> None:
+    first_frame = True
+    while True:
+        dashboard = _render_dashboard(limiter.status())
+        if first_frame:
+            frame = "".join(f"\033[2K\r{line}\n" for line in dashboard.splitlines())
+            first_frame = False
+        else:
+            frame = f"\033[{DASHBOARD_LINES}A" + "".join(
+                f"\033[2K\r{line}\n" for line in dashboard.splitlines()
+            )
+        sys.stdout.write(frame)
+        sys.stdout.flush()
+        await asyncio.sleep(1)
+
+
 async def _stream_events(
     limiter: RateLimiter,
     settings: Settings,
@@ -182,7 +227,7 @@ async def _open_upstream(
     settings: Settings, body: dict, request_id: str
 ) -> Tuple[httpx.AsyncClient, httpx.Response]:
     headers = {
-        "Authorization": f"Bearer {settings.nvidia_api_key}",
+        "Authorization": f"Bearer {settings.upstream_api_key}",
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
         "x-request-id": request_id,
@@ -195,11 +240,16 @@ async def _open_upstream(
         client = httpx.AsyncClient(**kwargs)
         req = client.build_request("POST", url, json=body, headers=headers)
         resp = await client.send(req, stream=True)
-        if resp.status_code == 429 and attempt < settings.http_retries:
+        if resp.status_code in {429, 503} and attempt < settings.http_retries:
             await resp.aclose()
             await client.aclose()
             backoff = settings.backoff_base * (2 ** attempt)
-            log.warning("upstream 429 for %s, retrying in %.1fs", request_id, backoff)
+            log.warning(
+                "upstream %d for %s, retrying in %.1fs",
+                resp.status_code,
+                request_id,
+                backoff,
+            )
             await asyncio.sleep(backoff)
             continue
         return client, resp

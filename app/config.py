@@ -12,6 +12,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _env(name: str, legacy_name: str, default: str) -> str:
+    return os.getenv(name, os.getenv(legacy_name, default))
+
+
 def _env_int(name: str, default: int) -> int:
     return int(os.getenv(name, str(default)))
 
@@ -20,14 +24,24 @@ def _env_float(name: str, default: float) -> float:
     return float(os.getenv(name, str(default)))
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    return os.getenv(name, str(default)).lower() == "true"
+
+
 @dataclass
 class Settings:
-    nvidia_api_key: str = field(default_factory=lambda: os.getenv("NVIDIA_API_KEY", ""))
-    nvidia_base_url: str = field(
-        default_factory=lambda: os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    upstream_api_key: str = field(
+        default_factory=lambda: _env("UPSTREAM_API_KEY", "NVIDIA_API_KEY", "")
+    )
+    upstream_base_url: str = field(
+        default_factory=lambda: _env(
+            "UPSTREAM_BASE_URL", "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"
+        )
     )
     default_model: str = field(
-        default_factory=lambda: os.getenv("NVIDIA_DEFAULT_MODEL", "meta/llama-3.3-70b-instruct")
+        default_factory=lambda: _env(
+            "UPSTREAM_DEFAULT_MODEL", "NVIDIA_DEFAULT_MODEL", "meta/llama-3.3-70b-instruct"
+        )
     )
     max_rpm: int = field(default_factory=lambda: _env_int("MAX_RPM", 40))
     window_size: float = field(default_factory=lambda: _env_float("WINDOW_SIZE", 60.0))
@@ -44,13 +58,15 @@ class Settings:
     large_body_bytes: int = field(default_factory=lambda: _env_int("LARGE_BODY_BYTES", 262144))
     host: str = field(default_factory=lambda: os.getenv("HOST", "0.0.0.0"))
     port: int = field(default_factory=lambda: _env_int("PORT", 8000))
+    dashboard_enabled: bool = field(default_factory=lambda: _env_bool("DASHBOARD_ENABLED", False))
 
     transport: Optional[httpx.AsyncBaseTransport] = None
 
     known_models: tuple = field(
         default_factory=lambda: tuple(
             m.strip()
-            for m in os.getenv(
+            for m in _env(
+                "UPSTREAM_MODELS",
                 "NVIDIA_MODELS",
                 "nvidia/nemotron-3.5-lightning-30b-a3b,"
                 "meta/llama-3.3-70b-instruct,"
@@ -65,11 +81,11 @@ class Settings:
         )
     )
     rewrite_unknown_models: bool = field(
-        default_factory=lambda: os.getenv("REWRITE_UNKNOWN_MODELS", "true").lower() == "true"
+        default_factory=lambda: _env_bool("REWRITE_UNKNOWN_MODELS", True)
     )
 
     def upstream_url(self) -> str:
-        return f"{self.nvidia_base_url}/chat/completions"
+        return f"{self.upstream_base_url.rstrip('/')}/chat/completions"
 
     def httpx_timeout(self):
         import httpx

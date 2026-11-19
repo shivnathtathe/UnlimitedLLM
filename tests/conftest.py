@@ -50,6 +50,7 @@ def mock_upstream_handler(
     json_body: Optional[dict] = None,
     headers: Optional[dict] = None,
     count_429: int = 0,
+    count_503: int = 0,
     calls: Optional[list] = None,
 ) -> Callable[[httpx.Request], httpx.Response]:
     state = {"n": 0}
@@ -60,6 +61,8 @@ def mock_upstream_handler(
             calls.append(json.loads(request.content.decode("utf-8", "replace")))
         if state["n"] <= count_429:
             return httpx.Response(429, json={"error": "rate limited"}, request=request)
+        if state["n"] <= count_429 + count_503:
+            return httpx.Response(503, json={"error": "service unavailable"}, request=request)
         resp_headers = {"content-type": "text/event-stream", **(headers or {})}
         if json_body is not None:
             return httpx.Response(status_code, json=json_body, headers=resp_headers, request=request)

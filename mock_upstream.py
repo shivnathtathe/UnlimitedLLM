@@ -1,8 +1,8 @@
 """Simulated NVIDIA upstream for safe local load testing.
 
-Run the proxy with NVIDIA_BASE_URL pointing at this mock:
+Run the proxy with UPSTREAM_BASE_URL pointing at this mock:
 
-    NVIDIA_BASE_URL=http://localhost:9001/v1 python main.py
+    UPSTREAM_BASE_URL=http://localhost:9001/v1 python main.py
 
 This implements the same /v1/chat/completions surface (JSON + SSE) the real
 NVIDIA API exposes, with a small artificial latency so requests stay in flight
